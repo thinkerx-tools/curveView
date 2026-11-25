@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Layer, Line, Rect, Stage } from 'react-konva'
 import type Konva from 'konva'
+import { bFromChordAndHandle, boundsOfPoints } from '../data/geometry'
 import { createShapeDefaults, useEditor } from '../store/editorStore'
 import type { Point, ToolMode } from '../data/types'
 import { Anchors } from './Anchors'
+import { CoordinateGrid } from './CoordinateGrid'
 import { ShapeNode } from './ShapeNode'
 
 function screenToWorld(
@@ -47,6 +49,10 @@ export function EditorStage({ width, height }: Props) {
   const panStart = useRef<{ x: number; y: number; vx: number; vy: number } | null>(
     null,
   )
+  const [activeSeg, setActiveSeg] = useState<{
+    endIndex: number
+    b: number
+  } | null>(null)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -208,6 +214,11 @@ export function EditorStage({ width, height }: Props) {
     panStart.current = null
   }
 
+  const onMouseUp = () => {
+    endPan()
+    // leave activeSeg label until next interaction; cleared on deselect
+  }
+
   const selected = state.shapes.find((s) => s.id === state.selectedId)
 
   const handleAnchorDrag = (index: number, x: number, y: number) => {
@@ -288,7 +299,63 @@ export function EditorStage({ width, height }: Props) {
     })
   }
 
+  const handleSegmentDrag = (endIndex: number, x: number, y: number) => {
+    if (!selected) return
+    const p0 = selected.points[endIndex - 1]
+    const p1 = selected.points[endIndex]
+    if (!p0 || !p1) return
+    const b = bFromChordAndHandle(p0, p1, { x, y })
+    setActiveSeg({ endIndex, b })
+    if (Math.abs(b) < 1e-3) {
+      const points = selected.points.map((pt, idx) => {
+        if (idx !== endIndex) return pt
+        const { b: _drop, ...rest } = pt
+        void _drop
+        return rest
+      })
+      dispatch({
+        type: 'UPDATE_SHAPE',
+        shapeId: selected.id,
+        patch: { points },
+      })
+    } else {
+      dispatch({
+        type: 'UPDATE_POINT',
+        shapeId: selected.id,
+        index: endIndex,
+        point: { b },
+      })
+    }
+  }
+
   const board = state.lastRect
+
+  const gridBounds = useMemo(() => {
+    let minX = 0
+    let minY = 0
+    let maxX = board?.w ?? 400
+    let maxY = board?.h ?? 400
+    for (const s of state.shapes) {
+      const b = boundsOfPoints(s.points)
+      if (!b) continue
+      minX = Math.min(minX, b.minX)
+      minY = Math.min(minY, b.minY)
+      maxX = Math.max(maxX, b.maxX)
+      maxY = Math.max(maxY, b.maxY)
+    }
+    // also cover current viewport in world space
+    const vp = state.viewport
+    const viewMinX = -vp.x / vp.scale
+    const viewMinY = -vp.y / vp.scale
+    const viewMaxX = (width - vp.x) / vp.scale
+    const viewMaxY = (height - vp.y) / vp.scale
+    return {
+      minX: Math.min(minX, viewMinX),
+      minY: Math.min(minY, viewMinY),
+      maxX: Math.max(maxX, viewMaxX),
+      maxY: Math.max(maxY, viewMaxY),
+    }
+  }, [state.shapes, state.viewport, board, width, height])
 
   return (
     <Stage
@@ -299,7 +366,7 @@ export function EditorStage({ width, height }: Props) {
       onMouseDown={onMouseDown}
       onDblClick={onDblClick}
       onMouseMove={onMouseMove}
-      onMouseUp={endPan}
+      onMouseUp={onMouseUp}
       onMouseLeave={endPan}
       style={{
         cursor:
@@ -317,6 +384,11 @@ export function EditorStage({ width, height }: Props) {
         scaleX={state.viewport.scale}
         scaleY={state.viewport.scale}
       >
+        <CoordinateGrid
+          scale={state.viewport.scale}
+          bounds={gridBounds}
+          lastRect={board}
+        />
         {board && (
           <Rect
             x={0}
@@ -337,6 +409,7 @@ export function EditorStage({ width, height }: Props) {
             onSelect={(id) => {
               if (state.tool === 'select') {
                 dispatch({ type: 'SELECT', id })
+                if (id !== state.selectedId) setActiveSeg(null)
               }
             }}
           />
@@ -354,6 +427,8 @@ export function EditorStage({ width, height }: Props) {
             shape={selected}
             scale={state.viewport.scale}
             onPointDrag={handleAnchorDrag}
+            onSegmentDrag={handleSegmentDrag}
+            activeSeg={activeSeg}
           />
         )}
       </Layer>

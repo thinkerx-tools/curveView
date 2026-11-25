@@ -56,7 +56,7 @@ export function DataPanel({ canvasSize }: Props) {
     <aside className="panel">
       <h3>数据</h3>
       <p className="hint">
-        支持 lastCurve（vertex / extras / lastRect）或纯 vertex 数组
+        支持 lastCurve（vertex / extras / lastRect）或纯 vertex 数组。选中路径后拖动线段中点（黄/蓝圆）可修改弧度 b。
       </p>
       <textarea
         value={text}

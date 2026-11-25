@@ -1,13 +1,32 @@
-import { Circle, Rect } from 'react-konva'
+import { Circle, Rect, Text } from 'react-konva'
+import { segmentHandlePoint } from '../data/geometry'
 import type { Shape } from '../data/types'
 
 type Props = {
   shape: Shape
   scale: number
   onPointDrag: (index: number, x: number, y: number) => void
+  onSegmentDrag: (endIndex: number, x: number, y: number) => void
+  activeSeg?: { endIndex: number; b: number } | null
 }
 
-export function Anchors({ shape, scale, onPointDrag }: Props) {
+function pathSegments(shape: Shape): { i0: number; i1: number }[] {
+  const pts = shape.points
+  if (pts.length < 2) return []
+  const segs: { i0: number; i1: number }[] = []
+  for (let i = 1; i < pts.length; i++) {
+    segs.push({ i0: i - 1, i1: i })
+  }
+  return segs
+}
+
+export function Anchors({
+  shape,
+  scale,
+  onPointDrag,
+  onSegmentDrag,
+  activeSeg,
+}: Props) {
   const size = 8 / scale
   const strokeW = 1.5 / scale
 
@@ -43,7 +62,9 @@ export function Anchors({ shape, scale, onPointDrag }: Props) {
   }
 
   if (
-    (shape.kind === 'circle' || shape.kind === 'ellipse' || shape.kind === 'point') &&
+    (shape.kind === 'circle' ||
+      shape.kind === 'ellipse' ||
+      shape.kind === 'point') &&
     shape.points[0]
   ) {
     const p = shape.points[0]
@@ -83,8 +104,63 @@ export function Anchors({ shape, scale, onPointDrag }: Props) {
     )
   }
 
+  const showSeg =
+    shape.kind === 'path' ||
+    shape.kind === 'polygon' ||
+    shape.kind === 'polyline'
+
   return (
     <>
+      {showSeg &&
+        pathSegments(shape).map(({ i0, i1 }) => {
+          const p0 = shape.points[i0]
+          const p1 = shape.points[i1]
+          const hp = segmentHandlePoint(p0, p1, p1.b)
+          const isActive = activeSeg?.endIndex === i1
+          return (
+            <Circle
+              key={`seg-${i1}`}
+              x={hp.x}
+              y={hp.y}
+              radius={(isActive ? 6 : 5) / scale}
+              fill={p1.b ? '#fbbf24' : '#93c5fd'}
+              stroke="#1d4ed8"
+              strokeWidth={strokeW}
+              draggable
+              onMouseDown={(e) => {
+                e.cancelBubble = true
+              }}
+              onDragMove={(e) => {
+                e.cancelBubble = true
+                onSegmentDrag(i1, e.target.x(), e.target.y())
+              }}
+            />
+          )
+        })}
+      {activeSeg && showSeg && (
+        <Text
+          x={
+            segmentHandlePoint(
+              shape.points[activeSeg.endIndex - 1],
+              shape.points[activeSeg.endIndex],
+              activeSeg.b,
+            ).x +
+            10 / scale
+          }
+          y={
+            segmentHandlePoint(
+              shape.points[activeSeg.endIndex - 1],
+              shape.points[activeSeg.endIndex],
+              activeSeg.b,
+            ).y -
+            14 / scale
+          }
+          text={`b=${activeSeg.b.toFixed(1)}°`}
+          fontSize={12 / scale}
+          fill="#b45309"
+          listening={false}
+        />
+      )}
       {shape.points.map((p, i) => (
         <Rect
           key={i}

@@ -128,6 +128,70 @@ export function boundsOfPoints(points: Point[]): {
   return { minX, minY, maxX, maxY }
 }
 
+/**
+ * Signed sagitta → central angle (deg).
+ * Positive h is on the clockwise-bulge side of chord P0→P1 (Canvas Y-down).
+ * Relation: tan(θ/4) = 2h/L  ⇒  θ = 4·atan(2h/L)
+ */
+export function bFromChordAndHandle(
+  p0: Point,
+  p1: Point,
+  handle: Point,
+): number {
+  const dx = p1.x - p0.x
+  const dy = p1.y - p0.y
+  const L = Math.hypot(dx, dy)
+  if (L < EPS) return 0
+
+  const ux = dx / L
+  const uy = dy / L
+  // CW bulge normal (arc side for b>0): opposite of center offset (uy,-ux)
+  const nx = -uy
+  const ny = ux
+  const mx = (p0.x + p1.x) / 2
+  const my = (p0.y + p1.y) / 2
+  const h = (handle.x - mx) * nx + (handle.y - my) * ny
+
+  if (Math.abs(h) < EPS) return 0
+
+  let thetaRad = 4 * Math.atan((2 * h) / L)
+  // keep within (-360, 360), avoid full-circle singularity
+  const lim = (Math.PI * 2 * 359.999) / 360
+  if (thetaRad > lim) thetaRad = lim
+  if (thetaRad < -lim) thetaRad = -lim
+
+  const deg = (thetaRad * 180) / Math.PI
+  return Math.abs(deg) < 1e-4 ? 0 : deg
+}
+
+/**
+ * Midpoint of the arc (or chord) for segment handle display.
+ * Uses sagitta: h = (L/2)·tan(θ/4) along CW-bulge normal.
+ */
+export function segmentHandlePoint(
+  p0: Point,
+  p1: Point,
+  b?: number,
+): Point {
+  const mx = (p0.x + p1.x) / 2
+  const my = (p0.y + p1.y) / 2
+  const dx = p1.x - p0.x
+  const dy = p1.y - p0.y
+  const L = Math.hypot(dx, dy)
+  if (L < EPS) return { x: mx, y: my }
+
+  const theta = b === undefined ? 0 : normalizeAngleDeg(b)
+  if (Math.abs(theta) < EPS) return { x: mx, y: my }
+
+  const ux = dx / L
+  const uy = dy / L
+  const nx = -uy
+  const ny = ux
+  const thetaRad = (theta * Math.PI) / 180
+  const h = (L / 2) * Math.tan(thetaRad / 4)
+  return { x: mx + nx * h, y: my + ny * h }
+}
+
 export function uid(prefix = 's'): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 }
